@@ -1,5 +1,6 @@
 use docker_git_android_connection::{
-    android_spec, docker_run_args, DEFAULT_ADB_ENDPOINT, DEFAULT_ANDROID_IMAGE,
+    android_spec, default_android_resource_limits, docker_run_args, no_vnc_endpoint,
+    DEFAULT_ADB_ENDPOINT, DEFAULT_ANDROID_IMAGE, DEFAULT_NOVNC_HOST, DEFAULT_NOVNC_PORT,
 };
 
 fn main() {
@@ -12,5 +13,11 @@ fn main() {
     .expect("default Android spec is valid");
 
     println!("container: {}", spec.android_container_name);
-    println!("docker args: {}", docker_run_args(&spec).join(" "));
+    let no_vnc = no_vnc_endpoint(DEFAULT_NOVNC_HOST, DEFAULT_NOVNC_HOST, DEFAULT_NOVNC_PORT);
+    let resource_limits = default_android_resource_limits();
+    println!("noVNC: {}", no_vnc.url);
+    println!(
+        "docker args: {}",
+        docker_run_args(&spec, Some(&no_vnc), &resource_limits).join(" ")
+    );
 }

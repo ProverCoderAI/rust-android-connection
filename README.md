@@ -23,7 +23,24 @@ docker-git-android-connection start --project dg-my-project --dry-run
 docker-git-android-connection stop --project dg-my-project --dry-run
 ```
 
-The lifecycle CLI computes deterministic Docker names from the project id and validates the configured ADB endpoint before constructing Docker arguments.
+The lifecycle CLI computes deterministic Docker names from the project id and validates the configured ADB endpoint before constructing Docker arguments. By default it publishes a Docker-Android noVNC bridge to `127.0.0.1:6080` and returns `noVncUrl` in lifecycle JSON:
+
+```json
+{
+  "androidContainerName": "dg-my-project-android",
+  "resourceLimits": {
+    "memory": "3g",
+    "memorySwap": "3g",
+    "cpus": "1.0"
+  },
+  "noVncPublished": true,
+  "noVncUrl": "http://127.0.0.1:6080/?autoconnect=true&resize=remote"
+}
+```
+
+Use `--novnc-port <port>` to request a different host port, `--novnc-bind-host <host>` to bind Docker publishing somewhere other than loopback, `--novnc-host <host>` to control the browser-facing URL host, or `--no-novnc-publish` to disable host publication.
+
+Android containers are resource-limited by default with `--memory 3g --memory-swap 3g --cpus 1.0`. Use `--memory <docker-size>`, `--memory-swap <docker-size>`, and `--cpus <positive-number>` to override those limits for a specific run.
 
 ## MCP Server
 
