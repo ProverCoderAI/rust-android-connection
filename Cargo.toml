@@ -1,11 +1,11 @@
 [package]
-name = "docker-git-android-connection"
+name = "rust-android-connection"
 version = "0.0.0"
 edition = "2021"
-description = "Rust Android MCP and lifecycle module for docker-git"
+description = "Rust Android lifecycle and ADB command module for docker-git"
 readme = "README.md"
 license = "MIT"
-keywords = ["docker-git", "android", "adb", "mcp", "rust"]
+keywords = ["docker-git", "android", "adb", "emulator", "rust"]
 categories = ["command-line-utilities", "development-tools"]
 repository = "https://github.com/ProverCoderAI/rust-android-connection"
 documentation = "https://github.com/ProverCoderAI/rust-android-connection"
@@ -17,6 +17,7 @@ rust-version = "1.70"
 # archive past the crates.io 10 MiB upload limit. See issue #58.
 include = [
     "src/**/*.rs",
+    "src/web/**/*",
     "examples/**/*.rs",
     "README.md",
     "LICENSE",
@@ -28,14 +29,11 @@ name = "docker_git_android_connection"
 path = "src/lib.rs"
 
 [[bin]]
-name = "docker-git-android-connection"
+name = "rust-android-connection"
 path = "src/main.rs"
 
-[[bin]]
-name = "android-connection"
-path = "src/bin/android-connection.rs"
-
 [dependencies]
+base64 = "0.22.1"
 clap = { version = "4.5.53", features = ["derive"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"

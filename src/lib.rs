@@ -1,8 +1,5 @@
-pub mod mcp;
-
 use serde::Serialize;
 
-pub const SERVER_NAME: &str = "android-connection";
 pub const DEFAULT_ANDROID_IMAGE: &str = "budtmo/docker-android:emulator_14.0";
 pub const DEFAULT_ADB_ENDPOINT: &str = "android:5555";
 pub const DEFAULT_PROJECT_ID: &str = "docker-git";
@@ -13,7 +10,32 @@ pub const DEFAULT_NOVNC_WEB_PORT: u16 = 6080;
 pub const DEFAULT_ANDROID_MEMORY_LIMIT: &str = "3g";
 pub const DEFAULT_ANDROID_MEMORY_SWAP_LIMIT: &str = "3g";
 pub const DEFAULT_ANDROID_CPUS: &str = "1.0";
+pub const DEFAULT_ANDROID_RUNTIME_PROFILE: &str = "interactive";
+pub const APP_TEST_ANDROID_RUNTIME_PROFILE: &str = "app-test";
+pub const APP_TEST_VNC_ANDROID_RUNTIME_PROFILE: &str = "app-test-vnc";
+pub const APP_TEST_EMULATOR_CONFIG_PATH: &str = "/tmp/docker-git-app-test-emulator.ini";
+pub const APP_TEST_EMULATOR_ADDITIONAL_ARGS: &str = "-no-window -no-audio -no-boot-anim -no-snapshot -lowram -memory 1536 -camera-back none -camera-front none";
+pub const APP_TEST_VNC_EMULATOR_ADDITIONAL_ARGS: &str =
+    "-no-audio -no-boot-anim -no-snapshot -lowram -memory 1536 -camera-back none -camera-front none";
 pub const NOVNC_DOCKER_BRIDGE_COMMAND: &str = "while true; do container_ip=$(hostname -i | awk '{print $1}'); /usr/bin/socat TCP-LISTEN:6081,bind=${container_ip},fork,reuseaddr TCP:127.0.0.1:6080; sleep 1; done & exec ${APP_PATH}/mixins/scripts/run.sh";
+pub const APP_TEST_EMULATOR_CONFIG_LINES: [&str; 16] = [
+    "hw.gsmModem = no",
+    "hw.ramSize = 1536",
+    "hw.gpu.enabled = no",
+    "hw.gpu.mode = swiftshader_indirect",
+    "hw.camera.back = none",
+    "hw.camera.front = none",
+    "hw.audioInput = no",
+    "hw.audioOutput = no",
+    "hw.accelerometer = no",
+    "hw.gyroscope = no",
+    "hw.sensors.orientation = no",
+    "hw.sensors.light = no",
+    "hw.sensors.pressure = no",
+    "showDeviceFrame = no",
+    "hw.lcd.width = 720",
+    "hw.lcd.height = 1280",
+];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EndpointError {
@@ -62,14 +84,56 @@ pub struct AndroidResourceLimits {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct McpToolSpec {
-    pub name: &'static str,
-    pub description: &'static str,
+#[serde(rename_all = "camelCase")]
+pub struct AndroidRuntimeOptions {
+    pub profile: String,
+    pub emulator_headless: RuntimeSwitch,
+    pub appium_enabled: RuntimeSwitch,
+    pub web_log_enabled: RuntimeSwitch,
+    pub web_vnc_enabled: RuntimeSwitch,
+    pub emulator_no_skin: RuntimeSwitch,
+    pub emulator_device: String,
+    pub emulator_data_partition: String,
+    pub emulator_additional_args: String,
+    pub emulator_config_path: Option<String>,
+    #[serde(skip)]
+    pub emulator_config_lines: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeSwitch {
+    Enabled,
+    Disabled,
+}
+
+impl RuntimeSwitch {
+    #[must_use]
+    pub const fn as_bool(self) -> bool {
+        matches!(self, Self::Enabled)
+    }
+
+    #[must_use]
+    pub const fn as_env(self) -> &'static str {
+        if self.as_bool() {
+            "true"
+        } else {
+            "false"
+        }
+    }
+}
+
+impl Serialize for RuntimeSwitch {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_bool(self.as_bool())
+    }
 }
 
 // CHANGE: normalize externally supplied project ids into Docker-safe names
-// WHY: Android sidecar names are pure functions of the project id, so MCP clients and lifecycle CLI agree
-// QUOTE(TZ): "Подключить mcp-android так же как работает MCP PLAYRIGHT"
+// WHY: Android sidecar names are pure functions of the project id, so lifecycle and ADB commands agree
+// QUOTE(TZ): "Пусть он с помощью команд подключается к контейнеру"
 // REF: issue-436
 // SOURCE: n/a
 // FORMAT THEOREM: forall s: normalize(s) in [a-z0-9-]+ and normalize(s) != ""
@@ -163,56 +227,6 @@ pub fn android_spec(
 }
 
 #[must_use]
-pub fn android_tools() -> Vec<McpToolSpec> {
-    vec![
-        McpToolSpec {
-            name: "android_status",
-            description: "Return the configured Android runtime and optional ADB status.",
-        },
-        McpToolSpec {
-            name: "android_devices",
-            description: "List Android devices visible to adb.",
-        },
-        McpToolSpec {
-            name: "android_screenshot",
-            description: "Capture a PNG screenshot into the workspace.",
-        },
-        McpToolSpec {
-            name: "android_tap",
-            description: "Tap screen coordinates.",
-        },
-        McpToolSpec {
-            name: "android_swipe",
-            description: "Swipe between screen coordinates.",
-        },
-        McpToolSpec {
-            name: "android_type_text",
-            description: "Type text into the active Android input field.",
-        },
-        McpToolSpec {
-            name: "android_press_key",
-            description: "Send an Android keycode.",
-        },
-        McpToolSpec {
-            name: "android_launch_app",
-            description: "Launch an installed Android package.",
-        },
-        McpToolSpec {
-            name: "android_open_url",
-            description: "Open a URL through Android intent handling.",
-        },
-        McpToolSpec {
-            name: "android_logcat",
-            description: "Read recent logcat output.",
-        },
-        McpToolSpec {
-            name: "android_install_apk",
-            description: "Install an APK from the workspace when explicitly enabled.",
-        },
-    ]
-}
-
-#[must_use]
 pub fn no_vnc_url_host_for_bind_host(bind_host: &str) -> String {
     let trimmed = bind_host
         .trim()
@@ -287,11 +301,83 @@ pub fn default_android_resource_limits() -> AndroidResourceLimits {
 }
 
 #[must_use]
+pub fn interactive_runtime_options() -> AndroidRuntimeOptions {
+    AndroidRuntimeOptions {
+        profile: DEFAULT_ANDROID_RUNTIME_PROFILE.to_string(),
+        emulator_headless: RuntimeSwitch::Disabled,
+        appium_enabled: RuntimeSwitch::Disabled,
+        web_log_enabled: RuntimeSwitch::Disabled,
+        web_vnc_enabled: RuntimeSwitch::Enabled,
+        emulator_no_skin: RuntimeSwitch::Disabled,
+        emulator_device: "Nexus 5".to_string(),
+        emulator_data_partition: "2g".to_string(),
+        emulator_additional_args: "-no-audio -no-boot-anim".to_string(),
+        emulator_config_path: Some(APP_TEST_EMULATOR_CONFIG_PATH.to_string()),
+        emulator_config_lines: APP_TEST_EMULATOR_CONFIG_LINES
+            .iter()
+            .map(|line| (*line).to_string())
+            .collect(),
+    }
+}
+
+#[must_use]
+pub fn app_test_runtime_options() -> AndroidRuntimeOptions {
+    AndroidRuntimeOptions {
+        profile: APP_TEST_ANDROID_RUNTIME_PROFILE.to_string(),
+        emulator_headless: RuntimeSwitch::Enabled,
+        appium_enabled: RuntimeSwitch::Disabled,
+        web_log_enabled: RuntimeSwitch::Disabled,
+        web_vnc_enabled: RuntimeSwitch::Disabled,
+        emulator_no_skin: RuntimeSwitch::Enabled,
+        emulator_device: "Nexus 5".to_string(),
+        emulator_data_partition: "2g".to_string(),
+        emulator_additional_args: APP_TEST_EMULATOR_ADDITIONAL_ARGS.to_string(),
+        emulator_config_path: Some(APP_TEST_EMULATOR_CONFIG_PATH.to_string()),
+        emulator_config_lines: APP_TEST_EMULATOR_CONFIG_LINES
+            .iter()
+            .map(|line| (*line).to_string())
+            .collect(),
+    }
+}
+
+#[must_use]
+pub fn app_test_vnc_runtime_options() -> AndroidRuntimeOptions {
+    AndroidRuntimeOptions {
+        profile: APP_TEST_VNC_ANDROID_RUNTIME_PROFILE.to_string(),
+        emulator_headless: RuntimeSwitch::Disabled,
+        appium_enabled: RuntimeSwitch::Disabled,
+        web_log_enabled: RuntimeSwitch::Disabled,
+        web_vnc_enabled: RuntimeSwitch::Enabled,
+        emulator_no_skin: RuntimeSwitch::Enabled,
+        emulator_device: "Nexus 5".to_string(),
+        emulator_data_partition: "2g".to_string(),
+        emulator_additional_args: APP_TEST_VNC_EMULATOR_ADDITIONAL_ARGS.to_string(),
+        emulator_config_path: Some(APP_TEST_EMULATOR_CONFIG_PATH.to_string()),
+        emulator_config_lines: APP_TEST_EMULATOR_CONFIG_LINES
+            .iter()
+            .map(|line| (*line).to_string())
+            .collect(),
+    }
+}
+
+#[must_use]
+pub fn android_runtime_options(profile: &str) -> Option<AndroidRuntimeOptions> {
+    match profile {
+        DEFAULT_ANDROID_RUNTIME_PROFILE => Some(interactive_runtime_options()),
+        APP_TEST_ANDROID_RUNTIME_PROFILE => Some(app_test_runtime_options()),
+        APP_TEST_VNC_ANDROID_RUNTIME_PROFILE => Some(app_test_vnc_runtime_options()),
+        _ => None,
+    }
+}
+
+#[must_use]
 pub fn docker_run_args(
     spec: &AndroidSpec,
     no_vnc: Option<&NoVncEndpoint>,
     resource_limits: &AndroidResourceLimits,
+    runtime_options: &AndroidRuntimeOptions,
 ) -> Vec<String> {
+    let web_vnc_enabled = runtime_options.web_vnc_enabled.as_bool() && no_vnc.is_some();
     let mut args = vec![
         "run".to_string(),
         "--detach".to_string(),
@@ -307,14 +393,47 @@ pub fn docker_run_args(
         "--network".to_string(),
         spec.docker_network.clone(),
         "--env".to_string(),
-        "EMULATOR_HEADLESS=false".to_string(),
+        "USER_BEHAVIOR_ANALYTICS=false".to_string(),
         "--env".to_string(),
-        "WEB_VNC=true".to_string(),
+        format!(
+            "EMULATOR_HEADLESS={}",
+            runtime_options.emulator_headless.as_env()
+        ),
+        "--env".to_string(),
+        format!("APPIUM={}", runtime_options.appium_enabled.as_env()),
+        "--env".to_string(),
+        format!("WEB_LOG={}", runtime_options.web_log_enabled.as_env()),
+        "--env".to_string(),
+        format!("WEB_VNC={web_vnc_enabled}"),
         "--env".to_string(),
         format!("WEB_VNC_PORT={DEFAULT_NOVNC_WEB_PORT}"),
+        "--env".to_string(),
+        format!(
+            "EMULATOR_NO_SKIN={}",
+            runtime_options.emulator_no_skin.as_env()
+        ),
+        "--env".to_string(),
+        format!("EMULATOR_DEVICE={}", runtime_options.emulator_device),
+        "--env".to_string(),
+        format!(
+            "EMULATOR_DATA_PARTITION={}",
+            runtime_options.emulator_data_partition
+        ),
+        "--env".to_string(),
+        format!(
+            "EMULATOR_ADDITIONAL_ARGS={}",
+            runtime_options.emulator_additional_args
+        ),
         "--volume".to_string(),
         format!("{}:/root/.android", spec.android_volume_name),
     ];
+
+    if let Some(config_path) = &runtime_options.emulator_config_path {
+        args.extend([
+            "--env".to_string(),
+            format!("EMULATOR_CONFIG_PATH={config_path}"),
+        ]);
+    }
 
     if let Some(no_vnc) = no_vnc {
         args.extend([
@@ -327,10 +446,55 @@ pub fn docker_run_args(
     }
 
     args.push(spec.image.clone());
-    if no_vnc.is_some() {
-        args.push(NOVNC_DOCKER_BRIDGE_COMMAND.to_string());
+    if let Some(command) = docker_startup_command(no_vnc.is_some(), runtime_options) {
+        args.push(command);
     }
     args
+}
+
+#[must_use]
+pub fn docker_startup_command(
+    no_vnc_enabled: bool,
+    runtime_options: &AndroidRuntimeOptions,
+) -> Option<String> {
+    let mut commands = Vec::new();
+    if let Some(config_path) = &runtime_options.emulator_config_path {
+        if !runtime_options.emulator_config_lines.is_empty() {
+            commands.push(write_emulator_config_command(
+                config_path,
+                &runtime_options.emulator_config_lines,
+            ));
+        }
+    }
+
+    if no_vnc_enabled {
+        commands.push("while true; do container_ip=$(hostname -i | awk '{print $1}'); /usr/bin/socat TCP-LISTEN:6081,bind=${container_ip},fork,reuseaddr TCP:127.0.0.1:6080; sleep 1; done &".to_string());
+    }
+
+    if commands.is_empty() {
+        None
+    } else {
+        commands.push("exec ${APP_PATH}/mixins/scripts/run.sh".to_string());
+        Some(commands.join(" "))
+    }
+}
+
+#[must_use]
+pub fn write_emulator_config_command(config_path: &str, config_lines: &[String]) -> String {
+    let quoted_lines = config_lines
+        .iter()
+        .map(|line| shell_single_quote(line))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!(
+        "printf '%s\\n' {quoted_lines} > {};",
+        shell_single_quote(config_path)
+    )
+}
+
+#[must_use]
+pub fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
 #[must_use]
@@ -375,14 +539,6 @@ mod tests {
         assert_eq!(spec.project_container_name, "dg-test");
         assert_eq!(spec.android_container_name, "dg-test-android");
         assert_eq!(spec.android_volume_name, "dg-test-home-android");
-    }
-
-    #[test]
-    fn advertises_android_mcp_tools() {
-        let names: Vec<&str> = android_tools().into_iter().map(|tool| tool.name).collect();
-        assert!(names.contains(&"android_status"));
-        assert!(names.contains(&"android_tap"));
-        assert!(names.contains(&"android_install_apk"));
     }
 
     #[test]
@@ -433,7 +589,8 @@ mod tests {
         let endpoint = no_vnc_endpoint("127.0.0.1", "127.0.0.1", DEFAULT_NOVNC_PORT);
 
         let resource_limits = default_android_resource_limits();
-        let args = docker_run_args(&spec, Some(&endpoint), &resource_limits);
+        let runtime_options = interactive_runtime_options();
+        let args = docker_run_args(&spec, Some(&endpoint), &resource_limits, &runtime_options);
         let publish_position = args
             .iter()
             .position(|value| value == "--publish")
@@ -444,10 +601,12 @@ mod tests {
             .expect("image argument");
 
         assert!(publish_position < image_position);
-        assert_eq!(
-            args.get(image_position + 1),
-            Some(&NOVNC_DOCKER_BRIDGE_COMMAND.to_string())
-        );
+        assert!(args
+            .get(image_position + 1)
+            .is_some_and(|argument| argument.contains("socat TCP-LISTEN:6081")));
+        assert!(args
+            .get(image_position + 1)
+            .is_some_and(|argument| argument.contains("hw.gsmModem = no")));
         assert_eq!(
             args.get(publish_position + 1),
             Some(&"127.0.0.1:6080:6081".to_string())
@@ -466,9 +625,44 @@ mod tests {
             .any(|window| window == ["--env", "EMULATOR_HEADLESS=false"]));
         assert!(args
             .windows(2)
+            .any(|window| window == ["--env", "APPIUM=false"]));
+        assert!(args
+            .windows(2)
+            .any(|window| window == ["--env", "WEB_LOG=false"]));
+        assert!(args
+            .windows(2)
             .any(|window| window == ["--env", "WEB_VNC=true"]));
         assert!(args
             .windows(2)
             .any(|window| window == ["--env", "WEB_VNC_PORT=6080"]));
+    }
+
+    #[test]
+    fn docker_run_args_can_use_app_test_runtime_profile() {
+        let spec = android_spec(
+            "dg-test",
+            "docker-git-shared",
+            "dg-test-android:5555",
+            DEFAULT_ANDROID_IMAGE,
+        )
+        .expect("valid spec");
+        let resource_limits = default_android_resource_limits();
+        let runtime_options = app_test_runtime_options();
+
+        let args = docker_run_args(&spec, None, &resource_limits, &runtime_options);
+
+        assert!(!args.iter().any(|argument| argument == "--publish"));
+        assert!(args
+            .windows(2)
+            .any(|window| window == ["--env", "EMULATOR_HEADLESS=true"]));
+        assert!(args
+            .windows(2)
+            .any(|window| window == ["--env", "WEB_VNC=false"]));
+        assert!(args
+            .last()
+            .is_some_and(|argument| argument.contains("hw.gsmModem = no")));
+        assert!(args
+            .last()
+            .is_some_and(|argument| argument.contains("exec ${APP_PATH}/mixins/scripts/run.sh")));
     }
 }

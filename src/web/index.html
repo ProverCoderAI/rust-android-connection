@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>rust-android-connection</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workspace" aria-labelledby="title">
+        <header class="masthead">
+          <div>
+            <p class="eyebrow">WebUSB Android bridge</p>
+            <h1 id="title">rust-android-connection</h1>
+          </div>
+          <div class="status-strip" aria-live="polite">
+            <span class="status-pill" id="support-pill">Checking WebUSB</span>
+            <span class="status-pill" id="context-pill">Checking context</span>
+            <span class="status-pill" id="device-pill">No device</span>
+          </div>
+        </header>
+
+        <section class="toolbar" aria-label="Connection controls">
+          <button id="refresh-devices" type="button">Refresh known devices</button>
+          <button id="connect-device" type="button" class="primary">Connect phone</button>
+          <button id="forget-devices" type="button">Forget USB/ADB keys</button>
+          <button id="disconnect-device" type="button" disabled>Disconnect</button>
+        </section>
+        <p id="connection-message" class="connection-message" aria-live="polite"></p>
+
+        <section class="grid">
+          <article class="panel device-panel">
+            <h2>Device</h2>
+            <dl class="device-facts">
+              <div>
+                <dt>Serial</dt>
+                <dd id="device-serial">-</dd>
+              </div>
+              <div>
+                <dt>Model</dt>
+                <dd id="device-model">-</dd>
+              </div>
+              <div>
+                <dt>Android</dt>
+                <dd id="device-android">-</dd>
+              </div>
+            </dl>
+            <div class="known-devices">
+              <h3>Known USB devices</h3>
+              <ul id="known-devices"></ul>
+            </div>
+          </article>
+
+          <article class="panel command-panel">
+            <h2>ADB shell</h2>
+            <form id="shell-form" class="command-form">
+              <input
+                id="shell-command"
+                name="command"
+                autocomplete="off"
+                spellcheck="false"
+                value="getprop ro.product.model"
+              />
+              <button id="run-shell" type="submit" disabled>Run</button>
+            </form>
+            <pre id="shell-output" class="terminal" aria-live="polite"></pre>
+          </article>
+
+          <article class="panel activity-panel">
+            <h2>Remote activity</h2>
+            <div class="activity-lanes" aria-hidden="true">
+              <span>Agent</span>
+              <span>Android</span>
+            </div>
+            <ol id="bridge-activity" class="activity-list" aria-live="polite">
+              <li class="activity-empty">No remote commands yet</li>
+            </ol>
+          </article>
+
+          <article class="panel screenshot-panel">
+            <h2>Screenshot</h2>
+            <div class="screenshot-actions">
+              <button id="capture-screen" type="button" disabled>Capture</button>
+              <a id="download-screen" class="download-link" download="android-screenshot.png" hidden>
+                Download PNG
+              </a>
+            </div>
+            <div class="screenshot-frame">
+              <img id="screen-image" alt="Android device screenshot" />
+              <p id="screen-empty">No screenshot captured</p>
+            </div>
+          </article>
+
+          <article class="panel log-panel">
+            <div class="panel-header">
+              <h2>Session log</h2>
+              <button id="copy-diagnostics" type="button">Copy diagnostics</button>
+            </div>
+            <pre id="session-log" class="terminal" aria-live="polite"></pre>
+          </article>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
